@@ -13,4 +13,13 @@ for (s in c("first", "second"))
   cat(sprintf("moderated/%-6s OK  %d chars\n", s, nchar(diagram_svg("moderated", s))))
 for (k in 2:5)
   cat(sprintf("parallel n=%d OK  %d chars\n", k, nchar(diagram_svg("parallel", n = k))))
+
+# custom names + XML escaping
+nmlist <- list(X = "Stress", Y = "Well-being", Z = "Gender",
+               med = c("Coping", "Support", "M3", "M4", "M5"))
+svg <- diagram_svg("serial", nm = nmlist)
+cat(sprintf("serial+names: has 'Coping'=%s, has 'Stress'=%s\n",
+            grepl("Coping", svg), grepl("Stress", svg)))
+esc <- diagram_svg("simple", nm = list(X = "A&B", Y = "x<y"))
+cat(sprintf("xml-escape: '&amp;'=%s, '&lt;'=%s\n", grepl("&amp;", esc), grepl("&lt;", esc)))
 cat("all diagrams generated without error\n")

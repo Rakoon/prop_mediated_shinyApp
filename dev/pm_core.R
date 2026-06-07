@@ -90,12 +90,17 @@ pm_parallel <- function(a, b, third, which = NULL, mode = "direct") {
 }
 
 # ---- Model 4: serial mediation (M1 -> M2) ------------------------------
+# goal: "m1" = effects through M1 (a1b1 + a1a3b2)
+#       "m2" = effects through M2 (a2b2 + a1a3b2)
+#       "total" = all routes. Note the serial path a1a3b2 belongs to BOTH the M1
+#       and M2 isolations, so those two overlap and need not sum to the total.
 pm_serial <- function(a1, a2, a3, b1, b2, third,
-                      goal = c("isolate", "total"), mode = "direct") {
+                      goal = c("m1", "m2", "total"), mode = "direct") {
   goal <- match.arg(goal)
   ie_m1 <- a1 * b1; ie_m2 <- a2 * b2; ie_serial <- a1 * a3 * b2
   terms <- list(ie_serial, ie_m1, ie_m2)
-  if (goal == "isolate") { num <- ie_serial + ie_m2; absnum <- abs(ie_serial) + abs(ie_m2) }
+  if (goal == "m1")      { num <- ie_m1 + ie_serial; absnum <- abs(ie_m1) + abs(ie_serial) }
+  else if (goal == "m2") { num <- ie_m2 + ie_serial; absnum <- abs(ie_m2) + abs(ie_serial) }
   else                   { num <- ie_serial + ie_m1 + ie_m2
                            absnum <- abs(ie_serial) + abs(ie_m1) + abs(ie_m2) }
   finalize(num, absnum, terms, third, mode,

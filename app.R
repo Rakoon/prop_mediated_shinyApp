@@ -79,12 +79,16 @@ pm_parallel <- function(a, b, third, which = NULL, mode = "direct") {
   finalize(num, absnum, terms, third, mode, list(terms = terms))
 }
 
+# goal: "m1" = effects through M1 (a1b1 + a1a3b2); "m2" = effects through M2
+# (a2b2 + a1a3b2); "total" = all routes. The serial path a1a3b2 belongs to BOTH
+# the M1 and M2 isolations, so those overlap and need not sum to the total.
 pm_serial <- function(a1, a2, a3, b1, b2, third,
-                      goal = c("isolate", "total"), mode = "direct") {
+                      goal = c("m1", "m2", "total"), mode = "direct") {
   goal <- match.arg(goal)
   ie_m1 <- a1 * b1; ie_m2 <- a2 * b2; ie_serial <- a1 * a3 * b2
   terms <- list(ie_serial, ie_m1, ie_m2)
-  if (goal == "isolate") { num <- ie_serial + ie_m2; absnum <- abs(ie_serial) + abs(ie_m2) }
+  if (goal == "m1")      { num <- ie_m1 + ie_serial; absnum <- abs(ie_m1) + abs(ie_serial) }
+  else if (goal == "m2") { num <- ie_m2 + ie_serial; absnum <- abs(ie_m2) + abs(ie_serial) }
   else                   { num <- ie_serial + ie_m1 + ie_m2
                            absnum <- abs(ie_serial) + abs(ie_m1) + abs(ie_m2) }
   finalize(num, absnum, terms, third, mode,
@@ -100,9 +104,16 @@ SUB <- c("₁", "₂", "₃", "₄", "₅")  # subscripts 1..5
 .svg_wrap <- function(inner, h = 210)
   sprintf('<svg viewBox="0 0 560 %g" width="100%%" style="max-width:560px;font-family:sans-serif">%s</svg>', h, inner)
 
-.box <- function(x, y, txt, w = 70, h = 40)
-  sprintf('<rect x="%g" y="%g" width="%g" height="%g" rx="4" fill="#f4f6fb" stroke="#33415c"/><text x="%g" y="%g" text-anchor="middle" font-size="16">%s</text>',
-          x, y, w, h, x + w/2, y + h/2 + 5, txt)
+.esc <- function(s) {  # escape XML-special chars in user-supplied labels
+  s <- gsub("&", "&amp;", s, fixed = TRUE)
+  s <- gsub("<", "&lt;",  s, fixed = TRUE)
+  gsub(">", "&gt;", s, fixed = TRUE)
+}
+.box <- function(x, y, txt, w = 70, h = 40) {
+  fs <- if (nchar(txt) > 10) 11 else if (nchar(txt) > 7) 13 else 16
+  sprintf('<rect x="%g" y="%g" width="%g" height="%g" rx="4" fill="#f4f6fb" stroke="#33415c"/><text x="%g" y="%g" text-anchor="middle" font-size="%g">%s</text>',
+          x, y, w, h, x + w/2, y + h/2 + 5, fs, .esc(txt))
+}
 
 .arrow <- function(x1, y1, x2, y2, lab, lx = NULL, ly = NULL, dashed = FALSE) {
   if (is.null(lx)) lx <- (x1 + x2)/2
@@ -114,35 +125,38 @@ SUB <- c("₁", "₂", "₃", "₄", "₅")  # subscripts 1..5
 
 .defs <- '<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#33415c"/></marker></defs>'
 
-diagram_parallel <- function(n = 2) {
+diagram_parallel <- function(n = 2, labX = "X", labY = "Y", med = NULL) {
+  if (is.null(med)) med <- paste0("M", SUB[seq_len(n)])
   top <- 15; gap <- 58
   ys  <- top + (seq_len(n) - 1) * gap
   span <- (n - 1) * gap + 40
   mid <- top + span / 2 - 20
   h   <- top + (n - 1) * gap + 50
-  parts <- c(.box(20, mid, "X"), .box(470, mid, "Y"),
+  parts <- c(.box(20, mid, labX), .box(470, mid, labY),
              .arrow(92, mid + 18, 470, mid + 18, "c'"))
   for (i in seq_len(n)) {
     yi <- ys[i]
     parts <- c(parts,
-      .box(235, yi, paste0("M", SUB[i])),
+      .box(235, yi, med[i]),
       .arrow(92, mid + 12, 235, yi + 20, paste0("a", SUB[i])),
       .arrow(305, yi + 20, 470, mid + 12, paste0("b", SUB[i])))
   }
   HTML(.svg_wrap(paste0(.defs, paste(parts, collapse = "")), h))
 }
 
-diagram_svg <- function(model, stage = "first", n = 2) {
-  if (model == "parallel") return(diagram_parallel(n))
+diagram_svg <- function(model, stage = "first", n = 2, nm = list()) {
+  X <- nm$X %||% "X"; Y <- nm$Y %||% "Y"; Z <- nm$Z %||% "z"; M <- nm$M %||% "M"
+  med <- nm$med %||% paste0("M", SUB[seq_len(5)])
+  if (model == "parallel") return(diagram_parallel(n, X, Y, med[seq_len(n)]))
   s <- switch(model,
     "simple" = paste0(
-      .box(20, 90, "X"), .box(245, 20, "M"), .box(470, 90, "Y"),
+      .box(20, 90, X), .box(245, 20, M), .box(470, 90, Y),
       .arrow(92, 95, 245, 50, "a"),
       .arrow(315, 50, 470, 95, "b"),
       .arrow(92, 120, 470, 120, "c'")),
     "moderated" = paste0(
-      .box(20, 110, "X"), .box(245, 30, "M"), .box(470, 110, "Y"),
-      .box(20, 20, "z", 50, 30),
+      .box(20, 110, X), .box(245, 30, M), .box(470, 110, Y),
+      .box(20, 20, Z, 50, 30),
       # dashed arrow from z points at the moderated path:
       # first stage -> the a-path (X->M); second stage -> the b-path (M->Y)
       .arrow(68, 48, if (stage == "first") 165 else 388, 88, "", dashed = TRUE),
@@ -150,7 +164,7 @@ diagram_svg <- function(model, stage = "first", n = 2) {
       .arrow(315, 65, 470, 115, if (stage == "first") "b" else "b×z"),
       .arrow(92, 140, 470, 140, "c'")),
     "serial" = paste0(
-      .box(20, 95, "X"), .box(190, 15, "M₁"), .box(360, 15, "M₂"), .box(470, 95, "Y"),
+      .box(20, 95, X), .box(190, 15, med[1]), .box(360, 15, med[2]), .box(470, 95, Y),
       .arrow(80, 100, 190, 45, "a₁", lx = 120, ly = 60),
       .arrow(260, 35, 360, 35, "a₃"),
       .arrow(90, 110, 360, 50, "a₂", lx = 250, ly = 120),
@@ -160,6 +174,8 @@ diagram_svg <- function(model, stage = "first", n = 2) {
   )
   HTML(.svg_wrap(paste0(.defs, s)))
 }
+
+`%||%` <- function(a, b) if (is.null(a)) b else a
 
 # =======================================================================
 # UI
@@ -199,15 +215,21 @@ ui <- fluidPage(
             "Second stage (z moderates b-path, M→Y)" = "second"))),
 
       conditionalPanel("input.model == 'parallel'",
-        sliderInput("n_med", "Number of mediators", min = 2, max = 5, value = 2, step = 1),
+        selectInput("n_med", "Number of mediators", choices = c(2, 3, 4, 5), selected = 2),
         radioButtons("goal_par", "Research goal",
           c("Isolate each mediator (Mₖ individually)" = "isolate",
             "Total mediated effect (all mediators)"        = "total"))),
 
       conditionalPanel("input.model == 'serial'",
         radioButtons("goal_ser", "Research goal",
-          c("Isolate mediator M₂ (effects through M₂)" = "isolate",
-            "Total mediated effect (M₁+M₂)"            = "total"))),
+          c("Isolate mediator M₁ (effects through M₁)" = "m1",
+            "Isolate mediator M₂ (effects through M₂)" = "m2",
+            "Total mediated effect (M₁+M₂)"            = "total")),
+        helpText(class = "small-note",
+          "The serial path (X→M₁→M₂→Y) is part of both the M₁ and M₂ isolations, so they overlap and need not sum to the total.")),
+
+      checkboxInput("name_vars", "Name my variables", FALSE),
+      conditionalPanel("input.name_vars", uiOutput("name_inputs")),
 
       tags$hr(),
       conditionalPanel("input.model != 'moderated'",
@@ -282,7 +304,7 @@ server <- function(input, output, session) {
         coefSE("a3", "a3 (a×z)", 0.10, "se_a3"),
         coefSE("b",  "b",  0.40, "se_b"), third),
       "parallel" = {
-        n <- input$n_med %||% 2
+        n <- as.integer(input$n_med %||% 2)
         ad <- c(.30, .20, .15, .10, .05); bd <- c(.40, .30, .25, .20, .15)
         rows <- lapply(seq_len(n), function(i) tagList(
           coefSE(paste0("a", i), paste0("a", SUB[i]), ad[i], paste0("se_a", i)),
@@ -320,10 +342,32 @@ server <- function(input, output, session) {
     )
   })
 
+  # ---- optional variable names -----------------------------------------
+  nmv <- function(id, default) {
+    if (!isTRUE(input$name_vars)) return(default)
+    v <- input[[id]]
+    if (is.null(v) || !nzchar(trimws(v))) default else trimws(v)
+  }
+  get_names <- function() list(
+    X = nmv("nm_X", "X"), Y = nmv("nm_Y", "Y"),
+    Z = nmv("nm_Z", "z"), M = nmv("nm_M", "M"),
+    med = vapply(1:5, function(i) nmv(paste0("nm_M", i), paste0("M", SUB[i])), character(1)))
+
+  output$name_inputs <- renderUI({
+    tn <- function(id, lab, val) textInput(id, lab, value = val)
+    meds <- switch(input$model,
+      "simple"    = list(tn("nm_M", "M label", "M")),
+      "moderated" = list(tn("nm_Z", "z (moderator) label", "z"), tn("nm_M", "M label", "M")),
+      "parallel"  = lapply(seq_len(as.integer(input$n_med %||% 2)), function(i)
+                      tn(paste0("nm_M", i), paste0("M", i, " label"), paste0("M", SUB[i]))),
+      "serial"    = list(tn("nm_M1", "M1 label", "M₁"), tn("nm_M2", "M2 label", "M₂")))
+    tagList(tn("nm_X", "X label", "X"), meds, tn("nm_Y", "Y label", "Y"))
+  })
+
   output$diagram <- renderUI(
     diagram_svg(input$model,
                 if (is.null(input$stage)) "first" else input$stage,
-                input$n_med %||% 2))
+                as.integer(input$n_med %||% 2), get_names()))
 
   g <- function(id, default = 0) { v <- input[[id]]; if (is.null(v) || is.na(v)) default else v }
   # correlations apply only when the advanced panel is enabled (else independence)
@@ -342,6 +386,7 @@ server <- function(input, output, session) {
     th    <- third_in()
     TH    <- rnorm(n, th$m, th$s)            # direct or total draws
     model <- input$model
+    vn    <- get_names()                     # resolved variable labels
 
     # validate optional correlations (only when the advanced panel is shown)
     if (isTRUE(input$adv)) {
@@ -384,10 +429,10 @@ server <- function(input, output, session) {
         ttl <- "First-stage moderated mediation"
       }
       build_moderated(ttl, f_p, f_d, level, mode, g("z_mean",0), g("z_sd",1),
-                      if (isTRUE(input$use_customz)) g("customz", NA) else NA)
+                      if (isTRUE(input$use_customz)) g("customz", NA) else NA, vn$Z)
 
     } else if (model == "parallel") {
-      nm  <- input$n_med %||% 2
+      nm  <- as.integer(input$n_med %||% 2)
       ad  <- c(.30,.20,.15,.10,.05); bd <- c(.40,.30,.25,.20,.15)
       A   <- lapply(seq_len(nm), function(i) rnorm(n, g(paste0("a",i), ad[i]), g(paste0("se_a",i), .05)))
       Bm  <- sapply(seq_len(nm), function(i) g(paste0("b",i), bd[i]))
@@ -396,16 +441,20 @@ server <- function(input, output, session) {
       ap  <- lapply(seq_len(nm), function(i) g(paste0("a",i), ad[i]))
       bp  <- lapply(seq_len(nm), function(i) g(paste0("b",i), bd[i]))
       build_parallel(p_n = nm, A = A, B = B, ap = ap, bp = bp, TH = TH, thm = th$m,
-                     goal = input$goal_par, level = level, mode = mode)
+                     goal = input$goal_par, level = level, mode = mode,
+                     medlabs = vn$med[seq_len(nm)])
 
     } else { # serial
-      goal <- input$goal_ser
+      goal <- input$goal_ser %||% "m1"
       A1  <- rnorm(n, g("a1",.3), g("se_a1",.05))
       pra <- draw_pair(n, g("a2",.2), g("se_a2",.05), g("a3",.25), g("se_a3",.05), gcor("r_a2a3"))
       prb <- draw_pair(n, g("b1",.4), g("se_b1",.05), g("b2",.3),  g("se_b2",.05), gcor("r_b1b2"))
       d <- pm_serial(A1, pra$x, pra$y, prb$x, prb$y, TH, goal, mode)
       p <- pm_serial(g("a1",.3), g("a2",.2), g("a3",.25), g("b1",.4), g("b2",.3), th$m, goal, mode)
-      gl <- if (goal == "isolate") "isolating M₂" else "total M₁+M₂"
+      gl <- switch(goal,
+        m1 = paste0("isolating ", vn$med[1]),
+        m2 = paste0("isolating ", vn$med[2]),
+        total = paste0("total ", vn$med[1], "+", vn$med[2]))
       build_single(paste0("Serial mediation (", gl, ")"), p, d, level, mode)
     }
   })
@@ -446,7 +495,7 @@ server <- function(input, output, session) {
          txt = c(title, pmline("", p, d, level), effline(p, d, level, mode)))
   }
 
-  build_parallel <- function(p_n, A, B, ap, bp, TH, thm, goal, level, mode) {
+  build_parallel <- function(p_n, A, B, ap, bp, TH, thm, goal, level, mode, medlabs) {
     title <- sprintf("Parallel mediation, %d mediators (%s)", p_n,
                      if (goal == "isolate") "each mediator" else "total")
     rows <- NULL; txt <- title
@@ -454,7 +503,7 @@ server <- function(input, output, session) {
       for (k in seq_len(p_n)) {
         d <- pm_parallel(A, B, TH, which = k, mode = mode)
         p <- pm_parallel(ap, bp, thm, which = k, mode = mode)
-        lbl <- paste0("M", SUB[k], ": ")
+        lbl <- paste0(medlabs[k], ": ")
         rows <- rbind(rows,
           mkrow(paste0(lbl, "PM"), p$pm, d$pm, level),
           mkrow(paste0(lbl, "Absolute PM"), p$abspm, d$abspm, level))
@@ -471,9 +520,11 @@ server <- function(input, output, session) {
     list(rows = rows, point = p0, level = level, txt = c(txt, effline(p0, d0, level, mode)))
   }
 
-  build_moderated <- function(title, f_p, f_d, level, mode, zmean, zsd, customz) {
-    levs <- list(c("z = −1 SD", zmean - zsd), c("z = Mean", zmean), c("z = +1 SD", zmean + zsd))
-    if (!is.na(customz)) levs <- c(levs, list(c(sprintf("z = %.3g (custom)", customz), customz)))
+  build_moderated <- function(title, f_p, f_d, level, mode, zmean, zsd, customz, zname = "z") {
+    levs <- list(c(paste0(zname, " = −1 SD"), zmean - zsd),
+                 c(paste0(zname, " = Mean"),  zmean),
+                 c(paste0(zname, " = +1 SD"), zmean + zsd))
+    if (!is.na(customz)) levs <- c(levs, list(c(sprintf("%s = %.3g (custom)", zname, customz), customz)))
     rows <- NULL; txt <- title
     for (L in levs) {
       lab <- L[1]; z <- as.numeric(L[2])
@@ -509,7 +560,5 @@ server <- function(input, output, session) {
         tags$b("⚠ Note: "), msg)
   })
 }
-
-`%||%` <- function(a, b) if (is.null(a)) b else a
 
 shinyApp(ui, server)

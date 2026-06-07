@@ -55,11 +55,16 @@ r3n3 <- pm_parallel(a = av, b = bv, third = .2, which = 3)   # isolate M3 = .05
 ok("M3 5-med isolate M3 PM = .1020", approx(r3n3$pm, .05/.49, 1e-9))
 
 ## --- Model 4: serial ----------------------------------------------------
-r4i <- pm_serial(a1=.3,a2=.2,a3=.25,b1=.4,b2=.3,third=.2, goal="isolate")
-ok("M4 isolate M2 PM = .2050",       approx(r4i$pm, .0825/.4025, 1e-9))
+# a1a3b2=.0225 a1b1=.12 a2b2=.06 denom=.4025
+r4m2 <- pm_serial(a1=.3,a2=.2,a3=.25,b1=.4,b2=.3,third=.2, goal="m2")
+ok("M4 isolate M2 PM = .2050",       approx(r4m2$pm, .0825/.4025, 1e-9))
+r4m1 <- pm_serial(a1=.3,a2=.2,a3=.25,b1=.4,b2=.3,third=.2, goal="m1")
+ok("M4 isolate M1 PM = .3540",       approx(r4m1$pm, .1425/.4025, 1e-9))
 r4t <- pm_serial(a1=.3,a2=.2,a3=.25,b1=.4,b2=.3,third=.2, goal="total")
 ok("M4 total PM = .5031",            approx(r4t$pm, .2025/.4025, 1e-9))
 ok("M4 total effect = .4025",        approx(r4t$total, .4025, 1e-9))
+ok("M4 M1+M2 isolations overlap (> total num)",
+   (r4m1$num + r4m2$num) > r4t$num)   # serial path double-counted
 
 ## --- Monte Carlo CI sanity ---------------------------------------------
 set.seed(1)
