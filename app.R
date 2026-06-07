@@ -143,8 +143,9 @@ diagram_svg <- function(model, stage = "first", n = 2) {
     "moderated" = paste0(
       .box(20, 110, "X"), .box(245, 30, "M"), .box(470, 110, "Y"),
       .box(20, 20, "z", 50, 30),
-      .arrow(70, 50, if (stage == "first") 250 else 360,
-                     if (stage == "first") 60 else 130, "", dashed = TRUE),
+      # dashed arrow from z points at the moderated path:
+      # first stage -> the a-path (X->M); second stage -> the b-path (M->Y)
+      .arrow(68, 48, if (stage == "first") 165 else 388, 88, "", dashed = TRUE),
       .arrow(92, 115, 245, 65, if (stage == "first") "a×z" else "a"),
       .arrow(315, 65, 470, 115, if (stage == "first") "b" else "b×z"),
       .arrow(92, 140, 470, 140, "c'")),
@@ -299,13 +300,19 @@ server <- function(input, output, session) {
 
   # ---- optional same-equation correlation inputs -----------------------
   output$cor_inputs <- renderUI({
-    cor1 <- function(id, lab, lo = -0.95) sliderInput(id, lab, min = lo, max = 0.95, value = 0, step = 0.05)
+    # pairwise correlation (allows negative): valid in [-1, 1]
+    cor1 <- function(id, lab) numericInput(id, lab, value = 0, min = -1, max = 1, step = 0.05)
+    # common correlation among 3+ paths (equicorrelation): valid in [0, 1]
+    corP <- function(id, lab) numericInput(id, lab, value = 0, min = 0, max = 1, step = 0.05)
     switch(input$model,
       "moderated" = if (identical(input$stage, "second"))
           cor1("r_b1b3", "cor(b1, b3)  [same Y equation]")
         else
           cor1("r_a1a3", "cor(a1, a3)  [same M equation]"),
-      "parallel" = cor1("r_bpar", "cor among b-paths  [same Y equation]", lo = 0),
+      "parallel" = tagList(
+          corP("r_bpar", "cor among b-paths  [same Y equation]"),
+          helpText(class = "small-note",
+                   "A common correlation shared by all b-paths must be 0 to 1.")),
       "serial"   = tagList(
           cor1("r_a2a3", "cor(a2, a3)  [same M2 equation]"),
           cor1("r_b1b2", "cor(b1, b2)  [same Y equation]")),
@@ -319,6 +326,8 @@ server <- function(input, output, session) {
                 input$n_med %||% 2))
 
   g <- function(id, default = 0) { v <- input[[id]]; if (is.null(v) || is.na(v)) default else v }
+  # correlations apply only when the advanced panel is enabled (else independence)
+  gcor <- function(id) if (isTRUE(input$adv)) g(id, 0) else 0
 
   # third (direct or total) mean + SE, per current mode
   third_in <- function() if (identical(emode(), "total"))
@@ -334,6 +343,25 @@ server <- function(input, output, session) {
     TH    <- rnorm(n, th$m, th$s)            # direct or total draws
     model <- input$model
 
+    # validate optional correlations (only when the advanced panel is shown)
+    if (isTRUE(input$adv)) {
+      vcor <- function(id, lo, hi, label) {
+        v <- input[[id]]
+        if (is.null(v)) return(invisible())
+        validate(need(is.finite(v) && v >= lo && v <= hi,
+          sprintf("%s must be a number between %.1f and %.1f.", label, lo, hi)))
+      }
+      if (model == "moderated") {
+        if (identical(input$stage, "second")) vcor("r_b1b3", -1, 1, "cor(b1, b3)")
+        else                                  vcor("r_a1a3", -1, 1, "cor(a1, a3)")
+      } else if (model == "parallel") {
+        vcor("r_bpar", 0, 1, "cor among b-paths")
+      } else if (model == "serial") {
+        vcor("r_a2a3", -1, 1, "cor(a2, a3)")
+        vcor("r_b1b2", -1, 1, "cor(b1, b2)")
+      }
+    }
+
     if (model == "simple") {
       A <- rnorm(n, g("a",.3), g("se_a",.05)); B <- rnorm(n, g("b",.4), g("se_b",.05))
       d <- pm_simple(A, B, TH, mode)
@@ -344,12 +372,12 @@ server <- function(input, output, session) {
       stage <- input$stage
       if (identical(stage, "second")) {
         A  <- rnorm(n, g("a",.3), g("se_a",.05))
-        pr <- draw_pair(n, g("b1",.4), g("se_b1",.05), g("b3",.1), g("se_b3",.05), g("r_b1b3",0))
+        pr <- draw_pair(n, g("b1",.4), g("se_b1",.05), g("b3",.1), g("se_b3",.05), gcor("r_b1b3"))
         f_d <- function(z) pm_modmed(third = TH, z = z, stage = "second", a1 = A, b1 = pr$x, b3 = pr$y, mode = mode)
         f_p <- function(z) pm_modmed(third = th$m, z = z, stage = "second", a1 = g("a",.3), b1 = g("b1",.4), b3 = g("b3",.1), mode = mode)
         ttl <- "Second-stage moderated mediation"
       } else {
-        pr <- draw_pair(n, g("a1",.3), g("se_a1",.05), g("a3",.1), g("se_a3",.05), g("r_a1a3",0))
+        pr <- draw_pair(n, g("a1",.3), g("se_a1",.05), g("a3",.1), g("se_a3",.05), gcor("r_a1a3"))
         B  <- rnorm(n, g("b",.4), g("se_b",.05))
         f_d <- function(z) pm_modmed(third = TH, z = z, stage = "first", a1 = pr$x, a3 = pr$y, b = B, mode = mode)
         f_p <- function(z) pm_modmed(third = th$m, z = z, stage = "first", a1 = g("a1",.3), a3 = g("a3",.1), b = g("b",.4), mode = mode)
@@ -364,7 +392,7 @@ server <- function(input, output, session) {
       A   <- lapply(seq_len(nm), function(i) rnorm(n, g(paste0("a",i), ad[i]), g(paste0("se_a",i), .05)))
       Bm  <- sapply(seq_len(nm), function(i) g(paste0("b",i), bd[i]))
       Bs  <- sapply(seq_len(nm), function(i) g(paste0("se_b",i), .05))
-      B   <- draw_equicorr(n, as.list(Bm), as.list(Bs), g("r_bpar", 0))
+      B   <- draw_equicorr(n, as.list(Bm), as.list(Bs), gcor("r_bpar"))
       ap  <- lapply(seq_len(nm), function(i) g(paste0("a",i), ad[i]))
       bp  <- lapply(seq_len(nm), function(i) g(paste0("b",i), bd[i]))
       build_parallel(p_n = nm, A = A, B = B, ap = ap, bp = bp, TH = TH, thm = th$m,
@@ -373,8 +401,8 @@ server <- function(input, output, session) {
     } else { # serial
       goal <- input$goal_ser
       A1  <- rnorm(n, g("a1",.3), g("se_a1",.05))
-      pra <- draw_pair(n, g("a2",.2), g("se_a2",.05), g("a3",.25), g("se_a3",.05), g("r_a2a3",0))
-      prb <- draw_pair(n, g("b1",.4), g("se_b1",.05), g("b2",.3),  g("se_b2",.05), g("r_b1b2",0))
+      pra <- draw_pair(n, g("a2",.2), g("se_a2",.05), g("a3",.25), g("se_a3",.05), gcor("r_a2a3"))
+      prb <- draw_pair(n, g("b1",.4), g("se_b1",.05), g("b2",.3),  g("se_b2",.05), gcor("r_b1b2"))
       d <- pm_serial(A1, pra$x, pra$y, prb$x, prb$y, TH, goal, mode)
       p <- pm_serial(g("a1",.3), g("a2",.2), g("a3",.25), g("b1",.4), g("b2",.3), th$m, goal, mode)
       gl <- if (goal == "isolate") "isolating M₂" else "total M₁+M₂"
